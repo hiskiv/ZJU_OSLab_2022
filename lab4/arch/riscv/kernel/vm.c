@@ -44,9 +44,12 @@ void setup_vm_final(void) {
 
     // mapping other memory -|W|R|V
     create_mapping((uint64*)swapper_pg_dir, (uint64)&_sdata, (uint64)(&_sdata) - PA2VA_OFFSET, 32766U, 3);
+    // create_mapping((uint64*)swapper_pg_dir, (uint64)&_sdata, (uint64)(&_sdata) - PA2VA_OFFSET, 16000U, 3);
 
+    uint64 new_satp = (((uint64)swapper_pg_dir - PA2VA_OFFSET) >> 12);
+    new_satp |= 0x8000000000000000;
     // set satp with swapper_pg_dir
-    __asm__ volatile("csrw satp, %[base]":: [base] "r" ((uint64)swapper_pg_dir):);
+    __asm__ volatile("csrw satp, %[base]":: [base] "r" (new_satp):);
 
     // flush TLB
     asm volatile("sfence.vma zero, zero");
@@ -74,7 +77,7 @@ void create_mapping(uint64 *pgtbl, uint64 va, uint64 pa, uint64 sz, int perm) {
         // the second level page (next to root)
         uint64 *pgtbl1;
         if (!(pgtbl[vpn2] & 1)) {
-            pgtbl1 = (uint64*)kalloc();
+            pgtbl1 = (uint64*)(kalloc() - PA2VA_OFFSET);
             pgtbl[vpn2] |= (1 | ((uint64)pgtbl1 >> 2));
         }
         else pgtbl1 = (uint64*)((pgtbl[vpn2] & 0x3ffffffffffffc00) << 2);
@@ -82,7 +85,7 @@ void create_mapping(uint64 *pgtbl, uint64 va, uint64 pa, uint64 sz, int perm) {
         // the third level page
         uint64 *pgtbl0;
         if (!(pgtbl1[vpn1] & 1)) {
-            pgtbl0 = (uint64*)kalloc();
+            pgtbl0 = (uint64*)(kalloc() - PA2VA_OFFSET);
             pgtbl1[vpn1] |= (1 | ((uint64)pgtbl0 >> 2));
         }
         else pgtbl0 = (uint64*)((pgtbl1[vpn1] & 0x3ffffffffffffc00) << 2);
