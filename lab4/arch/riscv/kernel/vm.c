@@ -45,6 +45,8 @@ void setup_vm_final(void) {
     // mapping other memory -|W|R|V
     create_mapping((uint64*)swapper_pg_dir, (uint64)&_sdata, (uint64)(&_sdata) - PA2VA_OFFSET, 32766U, 3);
     // create_mapping((uint64*)swapper_pg_dir, (uint64)&_sdata, (uint64)(&_sdata) - PA2VA_OFFSET, 16000U, 3);
+    
+    // verify();
 
     uint64 new_satp = (((uint64)swapper_pg_dir - PA2VA_OFFSET) >> 12);
     new_satp |= 0x8000000000000000;
@@ -55,6 +57,19 @@ void setup_vm_final(void) {
     asm volatile("sfence.vma zero, zero");
     printk("...setup_vm_final done!\n");
     return;
+}
+
+void verify() {
+    uint64 vpn2 = 384, vpn1 = 1;
+    uint64 srodata_vpn0 = 2, stext_vpn0 = 0;
+    uint64 *pgtb1 = (uint64*)((swapper_pg_dir[vpn2] & 0x3ffffffffffffc00) << 2);
+    printk("The first level page: 0x%x\n", pgtb1);
+    uint64 *pgtb0 = (uint64*)((pgtb1[vpn1] & 0x3ffffffffffffc00) << 2);
+    printk("The second level page: 0x%x\n", pgtb0);
+    printk("Priviledge bits for text pages: 0x%x\n", pgtb0[stext_vpn0] & 0xf);
+    printk("Physical address for text pages: 0x%x\n", ((pgtb0[stext_vpn0] & 0x3ffffffffffffc00) << 2));
+    printk("Priviledge bits for srodata pages: 0x%x\n", pgtb0[srodata_vpn0] & 0xf);
+    printk("Physical address for srodata pages: 0x%x\n", ((pgtb0[srodata_vpn0] & 0x3ffffffffffffc00) << 2));
 }
 
 /* 创建多级页表映射关系 */
