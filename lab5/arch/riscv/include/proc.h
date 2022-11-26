@@ -28,7 +28,7 @@ struct thread_struct {
 };
 
 struct task_struct {
-    struct thread_info* thread_info;
+    struct thread_info thread_info;
     uint64_t state;
     uint64_t counter;
     uint64_t priority;
@@ -43,6 +43,10 @@ struct pt_regs {
     uint64_t reg[31];
     uint64_t sepc, sstatus;
 };
+
+static uint64_t load_elf_program(struct task_struct*);
+
+static uint64_t load_binary_program(struct task_struct*);
 
 /* 线程初始化 创建 NR_TASKS 个线程 */
 void task_init();

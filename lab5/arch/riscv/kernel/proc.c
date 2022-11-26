@@ -5,6 +5,7 @@
 #include "defs.h"
 #include "string.h"
 #include "vm.h"
+#include "elf.h"
 
 extern void __dummy();
 extern uint64_t uapp_start;
@@ -14,6 +15,61 @@ extern unsigned long* swapper_pg_dir;
 struct task_struct* idle;           // idle process
 struct task_struct* current;        // 指向当前运行线程的 `task_struct`
 struct task_struct* task[NR_TASKS]; // 线程数组, 所有的线程都保存在此
+
+static uint64_t load_elf_program(struct task_struct* task) {
+    Elf64_Ehdr* ehdr = (Elf64_Ehdr*)(&uapp_start);
+
+    uint64_t phdr_start = (uint64_t)ehdr + ehdr->e_phoff;
+    int phdr_cnt = ehdr->e_phnum;
+
+    Elf64_Phdr* phdr;
+    int load_phdr_cnt = 0;
+    for (int i = 0; i < phdr_cnt; i++) {
+        phdr = (Elf64_Phdr*)(phdr_start + sizeof(Elf64_Phdr) * i);
+        if (phdr->p_type == PT_LOAD) {
+            // do mapping
+            // compute # of pages for code
+            uint64_t pg_num = (phdr->p_memsz - 1) / PGSIZE + 1;
+            uint64_t uapp_new = alloc_pages(pg_num); // allocate new space for copied code
+            uint64_t load_addr = ((uint64_t)(&uapp_start) + phdr->p_offset);
+            memcpy((void*)(uapp_new), (void*)(load_addr), phdr->p_memsz); // copy code
+            create_mapping((uint64*)PA2VA((uint64_t)task->pgd), 0, VA2PA(uapp_new), pg_num, 15);
+        }
+    }
+
+    // allocate user stack and do mapping
+    uint64_t u_stack_begin = alloc_page(); // allocate U-mode stack
+    create_mapping((uint64*)PA2VA((uint64_t)task->pgd), USER_END - PGSIZE, VA2PA(u_stack_begin), 1, 11);
+
+    // following code has been written for you
+    // set user stack
+    task->thread_info.user_sp = USER_END;
+    // pc for the user program
+    task->thread.sepc = 0; // ?
+    // sstatus bits set
+    task->thread.sstatus = (1 << 18) | (1 << 5);
+    // user stack for user program
+    task->thread.sscratch = USER_END;
+}
+
+static uint64_t load_binary_program(struct task_struct* task) {
+    // copy the user code to a new page
+    uint64_t pg_num = ((uint64_t)(&uapp_end) - (uint64_t)(&uapp_start) - 1) / PGSIZE + 1; // compute # of pages for code
+    uint64_t uapp_new = alloc_pages(pg_num); // allocate new space for copied code
+    memcpy((void*)(uapp_new), (void*)(&uapp_start), pg_num * PGSIZE); // copy code
+    uint64_t u_stack_begin = alloc_page(); // allocate U-mode stack
+
+    // note the U bits for the following PTEs are set to 1
+    // mapping of user text segment
+    create_mapping((uint64*)PA2VA((uint64_t)task->pgd), 0, VA2PA(uapp_new), pg_num, 15);
+    // mapping of user stack segment
+    create_mapping((uint64*)PA2VA((uint64_t)task->pgd), USER_END - PGSIZE, VA2PA(u_stack_begin), 1, 11);
+
+    // set CSRs
+    task->thread.sepc = 0; // set sepc at user space
+    task->thread.sstatus = (1 << 18) | (1 << 5); // set SPP = 0, SPIE = 1, SUM = 1
+    task->thread.sscratch = USER_END; // U-mode stack end (initial sp)
+}
 
 void task_init() {
     // 1. 调用 kalloc() 为 idle 分配一个物理页
@@ -42,28 +98,12 @@ void task_init() {
         task[i]->priority = rand() % 10 + 1;
         task[i]->pid = i;
 
-        // copy the user code to a new page
-        uint64_t pg_num = ((uint64_t)(&uapp_end) - (uint64_t)(&uapp_start) - 1) / PGSIZE + 1; // compute # of pages for code
-        uint64_t uapp_new = alloc_pages(pg_num); // allocate new space for copied code
-        memcpy((void*)(uapp_new), (void*)(&uapp_start), pg_num * PGSIZE); // copy code
-        uint64_t u_stack_begin = alloc_page(); // allocate U-mode stack
-
         // config page table
         task[i]->pgd = (pagetable_t)alloc_page();
         // copy the root page
-        copy_mapping(task[i]->pgd, (pagetable_t)(&swapper_pg_dir));
-        task[i]->pgd = (pagetable_t)VA2PA((uint64_t)task[i]->pgd);
-        // note the U bits for the following PTEs are set to 1
-        // mapping of user text segment
-        // create_mapping((uint64*)PA2VA((uint64_t)task[i]->pgd), uapp_new, VA2PA(uapp_new), pg_num, 13);
-        create_mapping((uint64*)PA2VA((uint64_t)task[i]->pgd), 0, VA2PA(uapp_new), pg_num, 15);
-        // mapping of user stack segment
-        create_mapping((uint64*)PA2VA((uint64_t)task[i]->pgd), USER_END - PGSIZE, VA2PA(u_stack_begin), 1, 11);
-
-        // set CSRs
-        task[i]->thread.sepc = 0; // set sepc at user space
-        task[i]->thread.sstatus = (1 << 18) | (1 << 5); // set SPP = 0, SPIE = 1, SUM = 1
-        task[i]->thread.sscratch = USER_END; // U-mode stack end (initial sp)
+        memcpy((void*)(task[i]->pgd), (void*)((&swapper_pg_dir)), PGSIZE);
+        task[i]->pgd = (pagetable_t)VA2PA((uint64_t)task[i]->pgd); // turn physical address
+        load_elf_program(task[i]);
 
         task[i]->thread.ra = (uint64_t)__dummy;
         task[i]->thread.sp = task_addr + PGSIZE; // initial kernel stack pointer
@@ -71,20 +111,6 @@ void task_init() {
 
     printk("...proc_init done!\n");
 }
-
-// void dummy() {
-//     uint64_t MOD = 1000000007;
-//     uint64_t auto_inc_local_var = 0;
-//     int last_counter = -1;
-//     while(1) {
-//         if (last_counter == -1 || current->counter != last_counter) {
-//             last_counter = current->counter;
-//             auto_inc_local_var = (auto_inc_local_var + 1) % MOD;
-//             // printk("[PID = %d] is running. auto_inc_local_var = %d\n", current->pid, auto_inc_local_var);
-//             printk("[PID = %d] is running. thread space begin at 0x%016lx\n", current->pid, current);
-//         }
-//     }
-// }
 
 extern void __switch_to(struct task_struct* prev, struct task_struct* next);
 

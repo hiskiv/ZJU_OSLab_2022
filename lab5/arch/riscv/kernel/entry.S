@@ -2,6 +2,12 @@
     .align 2
     .globl _traps 
 _traps:
+    # preserve t0 and t1 because we'll use them
+    # store them in U-mode stack (maybe S-mode stack if trapped from S-mode)
+    addi sp, sp, -16
+    sd t0, 0(sp)
+    sd t1, 8(sp)
+
     # first check it's U-mode or S-mode before trap
     csrr t0, sstatus
     andi t0, t0, 0x100 # take SPP bit
@@ -104,6 +110,11 @@ _smode_trap_1:
     add sp, t1, x0
 _smode_trap_2:
 
+    # restore t0 and t1
+    ld t0, 0(sp)
+    ld t1, 8(sp)
+    addi sp, sp, 16
+    
     # 4. return from trap
     sret
 
@@ -119,7 +130,7 @@ __dummy:
 __switch_to:
     # save state to prev process
     # including ra, sp, s0-s11
-    add t0, a0, 40  # offset of thread_struct in current task_struct
+    add t0, a0, 48  # offset of thread_struct in current task_struct
     sd ra, 0(t0)
     sd sp, 8(t0)
     sd s0, 16(t0)
@@ -142,7 +153,7 @@ __switch_to:
     sd t1, 128(t0)
 
     # restore state from next process
-    add t0, a1, 40  # offset of thread_struct in next task_struct
+    add t0, a1, 48  # offset of thread_struct in next task_struct
     ld ra, 0(t0)
     ld sp, 8(t0)
     ld s0, 16(t0)

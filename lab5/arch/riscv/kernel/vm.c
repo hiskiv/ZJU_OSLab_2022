@@ -107,7 +107,7 @@ void create_mapping(uint64 *pgtbl, uint64 va, uint64 pa, uint64 sz, int perm) {
         else pgtbl0 = (uint64*)(PA2VA_OFFSET + ((pgtbl1[vpn1] & 0x3ffffffffffffc00) << 2));
 
         // the physical page
-        // note the perm only contains infomation about XWR (no V)
+        // note the perm only contains infomation about UXWR (no V)
         pgtbl0[vpn0] = (1 | (perm << 1) | (pa >> 2));
 
         va += 0x1000, pa += 0x1000;
