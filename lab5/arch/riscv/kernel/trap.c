@@ -2,7 +2,7 @@
 #include "printk.h"
 #include "types.h"
 #include "proc.h"
-#include "../include/syscall.h"
+#include "syscall.h"
 #include "defs.h"
 
 void trap_handler(uint64 scause, uint64 sepc, struct pt_regs *regs) {

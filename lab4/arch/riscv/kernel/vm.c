@@ -92,18 +92,18 @@ void create_mapping(uint64 *pgtbl, uint64 va, uint64 pa, uint64 sz, int perm) {
         // the second level page (next to root)
         uint64 *pgtbl1;
         if (!(pgtbl[vpn2] & 1)) {
-            pgtbl1 = (uint64*)(kalloc() - PA2VA_OFFSET);
-            pgtbl[vpn2] |= (1 | ((uint64)pgtbl1 >> 2));
+            pgtbl1 = (uint64*)kalloc();
+            pgtbl[vpn2] |= (1 | (((uint64)pgtbl1 - PA2VA_OFFSET) >> 2));
         }
-        else pgtbl1 = (uint64*)((pgtbl[vpn2] & 0x3ffffffffffffc00) << 2);
+        else pgtbl1 = (uint64*)(PA2VA_OFFSET + ((pgtbl[vpn2] & 0x3ffffffffffffc00) << 2));
 
         // the third level page
         uint64 *pgtbl0;
         if (!(pgtbl1[vpn1] & 1)) {
-            pgtbl0 = (uint64*)(kalloc() - PA2VA_OFFSET);
-            pgtbl1[vpn1] |= (1 | ((uint64)pgtbl0 >> 2));
+            pgtbl0 = (uint64*)kalloc();
+            pgtbl1[vpn1] |= (1 | (((uint64)pgtbl0 - PA2VA_OFFSET) >> 2));
         }
-        else pgtbl0 = (uint64*)((pgtbl1[vpn1] & 0x3ffffffffffffc00) << 2);
+        else pgtbl0 = (uint64*)(PA2VA_OFFSET + ((pgtbl1[vpn1] & 0x3ffffffffffffc00) << 2));
 
         // the physical page
         if (!(pgtbl0[vpn0] & 1)) {

@@ -10,6 +10,6 @@ Current progress:
 - [x] Lab 1: booting and basic system calls
 - [x] Lab 2: supervisor timer interrupt
 - [x] Lab 3: thread and context switch
-- [x] Lab 4: virtual memory management
-- [ ] Lab 5
+- [x] Lab 4: virtual memory management (Note: lab4 has been out dated. Some new refinements are directly applied in lab5.)
+- [ ] Lab 5: user mode processes and switches
 - [ ] Lab 6

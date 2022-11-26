@@ -55,14 +55,15 @@ void task_init() {
         task[i]->pgd = (pagetable_t)VA2PA((uint64_t)task[i]->pgd);
         // note the U bits for the following PTEs are set to 1
         // mapping of user text segment
-        create_mapping((uint64*)PA2VA((uint64_t)task[i]->pgd), uapp_new, VA2PA(uapp_new), pg_num, 13);
+        // create_mapping((uint64*)PA2VA((uint64_t)task[i]->pgd), uapp_new, VA2PA(uapp_new), pg_num, 13);
+        create_mapping((uint64*)PA2VA((uint64_t)task[i]->pgd), 0, VA2PA(uapp_new), pg_num, 15);
         // mapping of user stack segment
-        create_mapping((uint64*)PA2VA((uint64_t)task[i]->pgd), u_stack_begin, VA2PA(u_stack_begin), 1, 11);
+        create_mapping((uint64*)PA2VA((uint64_t)task[i]->pgd), USER_END - PGSIZE, VA2PA(u_stack_begin), 1, 11);
 
         // set CSRs
-        task[i]->thread.sepc = uapp_new; // set sepc
+        task[i]->thread.sepc = 0; // set sepc at user space
         task[i]->thread.sstatus = (1 << 18) | (1 << 5); // set SPP = 0, SPIE = 1, SUM = 1
-        task[i]->thread.sscratch = u_stack_begin + PGSIZE; // U-mode stack end (initial sp)
+        task[i]->thread.sscratch = USER_END; // U-mode stack end (initial sp)
 
         task[i]->thread.ra = (uint64_t)__dummy;
         task[i]->thread.sp = task_addr + PGSIZE; // initial kernel stack pointer
@@ -71,19 +72,19 @@ void task_init() {
     printk("...proc_init done!\n");
 }
 
-void dummy() {
-    uint64_t MOD = 1000000007;
-    uint64_t auto_inc_local_var = 0;
-    int last_counter = -1;
-    while(1) {
-        if (last_counter == -1 || current->counter != last_counter) {
-            last_counter = current->counter;
-            auto_inc_local_var = (auto_inc_local_var + 1) % MOD;
-            // printk("[PID = %d] is running. auto_inc_local_var = %d\n", current->pid, auto_inc_local_var);
-            printk("[PID = %d] is running. thread space begin at 0x%016lx\n", current->pid, current);
-        }
-    }
-}
+// void dummy() {
+//     uint64_t MOD = 1000000007;
+//     uint64_t auto_inc_local_var = 0;
+//     int last_counter = -1;
+//     while(1) {
+//         if (last_counter == -1 || current->counter != last_counter) {
+//             last_counter = current->counter;
+//             auto_inc_local_var = (auto_inc_local_var + 1) % MOD;
+//             // printk("[PID = %d] is running. auto_inc_local_var = %d\n", current->pid, auto_inc_local_var);
+//             printk("[PID = %d] is running. thread space begin at 0x%016lx\n", current->pid, current);
+//         }
+//     }
+// }
 
 extern void __switch_to(struct task_struct* prev, struct task_struct* next);
 

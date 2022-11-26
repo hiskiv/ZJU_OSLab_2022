@@ -1,4 +1,4 @@
-#include "../include/string.h"
+#include "string.h"
 
 void *memset(void *dst, int c, uint64 n) {
     char *cdst = (char *)dst;
