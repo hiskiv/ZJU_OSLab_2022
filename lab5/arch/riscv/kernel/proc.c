@@ -33,7 +33,7 @@ static uint64_t load_elf_program(struct task_struct* task) {
             uint64_t uapp_new = alloc_pages(pg_num); // allocate new space for copied code
             uint64_t load_addr = ((uint64_t)(&uapp_start) + phdr->p_offset);
             memcpy((void*)(uapp_new), (void*)(load_addr), phdr->p_memsz); // copy code
-            create_mapping((uint64*)PA2VA((uint64_t)task->pgd), 0, VA2PA(uapp_new), pg_num, 15);
+            create_mapping((uint64*)PA2VA((uint64_t)task->pgd), 0, VA2PA(uapp_new), pg_num, phdr->p_flags | 0x8);
         }
     }
 
