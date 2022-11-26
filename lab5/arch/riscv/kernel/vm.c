@@ -37,13 +37,13 @@ void setup_vm_final(void) {
 
     // No OpenSBI mapping required
     // mapping kernel text X|-|R|V
-    create_mapping((uint64*)swapper_pg_dir, (uint64)&_stext, (uint64)(&_stext) - PA2VA_OFFSET, 2U, 5);
+    create_mapping((uint64*)swapper_pg_dir, (uint64)&_stext, (uint64)(&_stext) - PA2VA_OFFSET, ((uint64)(&_srodata) - (uint64)(&_stext)) / PGSIZE, 5);
 
     // mapping kernel rodata -|-|R|V
-    create_mapping((uint64*)swapper_pg_dir, (uint64)&_srodata, (uint64)(&_srodata) - PA2VA_OFFSET, 1U, 1);
+    create_mapping((uint64*)swapper_pg_dir, (uint64)&_srodata, (uint64)(&_srodata) - PA2VA_OFFSET, ((uint64)(&_sdata) - (uint64)(&_srodata)) / PGSIZE, 1);
 
     // mapping other memory -|W|R|V
-    create_mapping((uint64*)swapper_pg_dir, (uint64)&_sdata, (uint64)(&_sdata) - PA2VA_OFFSET, 32766U, 3);
+    create_mapping((uint64*)swapper_pg_dir, (uint64)&_sdata, (uint64)(&_sdata) - PA2VA_OFFSET, (PHY_END + PA2VA_OFFSET - (uint64)(&_sdata)) / PGSIZE, 3);
     // create_mapping((uint64*)swapper_pg_dir, (uint64)&_sdata, (uint64)(&_sdata) - PA2VA_OFFSET, 16000U, 3);
     
     // verify();
@@ -55,6 +55,7 @@ void setup_vm_final(void) {
 
     // flush TLB
     asm volatile("sfence.vma zero, zero");
+    asm volatile("fence.i");
     printk("...setup_vm_final done!\n");
     return;
 }
@@ -92,25 +93,38 @@ void create_mapping(uint64 *pgtbl, uint64 va, uint64 pa, uint64 sz, int perm) {
         // the second level page (next to root)
         uint64 *pgtbl1;
         if (!(pgtbl[vpn2] & 1)) {
-            pgtbl1 = (uint64*)(kalloc() - PA2VA_OFFSET);
-            pgtbl[vpn2] |= (1 | ((uint64)pgtbl1 >> 2));
+            pgtbl1 = (uint64*)kalloc();
+            pgtbl[vpn2] |= (1 | (((uint64)pgtbl1 - PA2VA_OFFSET) >> 2));
         }
-        else pgtbl1 = (uint64*)((pgtbl[vpn2] & 0x3ffffffffffffc00) << 2);
+        else pgtbl1 = (uint64*)(PA2VA_OFFSET + ((pgtbl[vpn2] & 0x3ffffffffffffc00) << 2));
 
         // the third level page
         uint64 *pgtbl0;
         if (!(pgtbl1[vpn1] & 1)) {
-            pgtbl0 = (uint64*)(kalloc() - PA2VA_OFFSET);
-            pgtbl1[vpn1] |= (1 | ((uint64)pgtbl0 >> 2));
+            pgtbl0 = (uint64*)kalloc();
+            pgtbl1[vpn1] |= (1 | (((uint64)pgtbl0 - PA2VA_OFFSET) >> 2));
         }
-        else pgtbl0 = (uint64*)((pgtbl1[vpn1] & 0x3ffffffffffffc00) << 2);
+        else pgtbl0 = (uint64*)(PA2VA_OFFSET + ((pgtbl1[vpn1] & 0x3ffffffffffffc00) << 2));
 
         // the physical page
-        if (!(pgtbl0[vpn0] & 1)) {
-            // note the perm only contains infomation about XWR (no V)
-            pgtbl0[vpn0] |= (1 | (perm << 1) | (pa >> 2));
-        }
+        // note the perm only contains infomation about XWR (no V)
+        pgtbl0[vpn0] = (1 | (perm << 1) | (pa >> 2));
 
         va += 0x1000, pa += 0x1000;
+    }
+}
+
+void copy_mapping(pagetable_t pgtbl_dst, pagetable_t pgtbl_src) {
+    for (int i = 0; i < 512; i++) {
+        if ((pgtbl_src[i] & 1)) {
+            if (!(pgtbl_src[i] & 0xe)) {
+                uint64* sub_pg = (uint64*)kalloc();
+                pgtbl_dst[i] = (1 | (((uint64)sub_pg - 0xffffffdf80000000) >> 2));
+                copy_mapping((pagetable_t)sub_pg, (pagetable_t)(PA2VA_OFFSET + ((pgtbl_src[i] & 0x3ffffffffffffc00) << 2)));
+            }
+            else {
+                pgtbl_dst[i] = pgtbl_src[i]; // actual physical page
+            }
+        }
     }
 }

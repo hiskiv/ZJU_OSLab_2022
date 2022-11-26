@@ -16,8 +16,15 @@
 #define VM_SIZE  (VM_END - VM_START)
 
 #define PA2VA_OFFSET (VM_START - PHY_START)
+#define VA2PA(x) ((x - (uint64_t)PA2VA_OFFSET))
+#define PA2VA(x) ((x + (uint64_t)PA2VA_OFFSET))
+
+#define USER_START (0x0000000000000000) // user space start virtual address
+#define USER_END   (0x0000004000000000) // user space end virtual address
 
 #define INF 0xFFFFFFFFFFFFFFFF
+
+#define STDOUT 1
 
 #include "types.h"
 

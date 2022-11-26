@@ -2,8 +2,18 @@
     .align 2
     .globl _traps 
 _traps:
-    # 1. save 32 registers and sepc to stack
-    addi sp, sp, -256
+    # first check it's U-mode or S-mode before trap
+    csrr t0, sstatus
+    andi t0, t0, 0x100 # take SPP bit
+    addi t1, x0, 0
+    bne t0, t1, _smode_trap_1  # SPP != 0: S-mode, don't need to switch stack
+    csrr t1, sscratch  # switch stack pointers for U mode and S mode
+    csrw sscratch, sp
+    add sp, t1, x0
+_smode_trap_1:
+
+    # 1. save 31 registers and sepc, sstatus to S-mode stack
+    addi sp, sp, -264
     sd x1, 0(sp)
     sd x2, 8(sp)
     sd x3, 16(sp)
@@ -37,13 +47,18 @@ _traps:
     sd x31, 240(sp)
     csrr t0, sepc
     sd t0, 248(sp)
+    csrr t0, sstatus
+    sd t0, 256(sp)
 
     # 2. call trap_handler
     csrr a0, scause # check which are the argument registers
     csrr a1, sepc
+    add a2, sp, x0  # pt_regs
     jal x1, trap_handler
 
     # 3. restore sepc and 32 registers (x2(sp) should be restore last) from stack
+    ld t0, 256(sp)
+    csrw sstatus, t0
     ld t0, 248(sp)
     csrw sepc, t0
     ld x1, 0(sp)
@@ -77,7 +92,17 @@ _traps:
     ld x30, 232(sp)
     ld x31, 240(sp)
     ld x2, 8(sp)
-    addi sp, sp, 256
+    addi sp, sp, 264
+
+    # resume original stack pointer (if trapped from U mode)
+    csrr t0, sstatus
+    andi t0, t0, 0x100 # take SPP bit
+    addi t1, x0, 0
+    bne t0, t1, _smode_trap_2  # SPP != 0: S-mode, don't need to switch stack
+    csrr t1, sscratch  # switch stack pointers for U mode and S mode
+    csrw sscratch, sp
+    add sp, t1, x0
+_smode_trap_2:
 
     # 4. return from trap
     sret
@@ -85,8 +110,9 @@ _traps:
     .extern dummy
     .globl __dummy
 __dummy:
-    la t0, dummy
-    csrw sepc, t0
+    csrr t1, sscratch  # switch stack pointers for U mode and S mode
+    csrw sscratch, sp
+    add sp, t1, x0
     sret
 
     .globl __switch_to
@@ -108,6 +134,12 @@ __switch_to:
     sd s9, 88(t0)
     sd s10, 96(t0)
     sd s11, 104(t0)
+    csrr t1, sepc
+    sd t1, 112(t0)
+    csrr t1, sstatus
+    sd t1, 120(t0)
+    csrr t1, sscratch
+    sd t1, 128(t0)
 
     # restore state from next process
     add t0, a1, 40  # offset of thread_struct in next task_struct
@@ -125,5 +157,26 @@ __switch_to:
     ld s9, 88(t0)
     ld s10, 96(t0)
     ld s11, 104(t0)
+    ld t1, 112(t0)
+    csrw sepc, t1
+    ld t1, 120(t0)
+    csrw sstatus, t1
+    ld t1, 128(t0)
+    csrw sscratch, t1
+
+    # switch page table
+    ld t1, 136(t0) # load new process' page table
+    srli t1, t1, 12
+    addi t0, x0, 8
+    slli t0, t0, 20
+    slli t0, t0, 20
+    slli t0, t0, 20
+    or t1, t1, t0
+    csrw satp, t1
+    
+    # flush tlb
+    sfence.vma zero, zero
+    # flush icache
+    fence.i
 
     ret

@@ -3,8 +3,13 @@
 #include "rand.h"
 #include "printk.h"
 #include "defs.h"
+#include "string.h"
+#include "vm.h"
 
 extern void __dummy();
+extern uint64_t uapp_start;
+extern uint64_t uapp_end;
+extern unsigned long* swapper_pg_dir;
 
 struct task_struct* idle;           // idle process
 struct task_struct* current;        // 指向当前运行线程的 `task_struct`
@@ -18,37 +23,57 @@ void task_init() {
     // 5. 将 current 和 task[0] 指向 idle
 
     /* YOUR CODE HERE */
-    uint64 addr_idle = kalloc();
+    uint64_t addr_idle = kalloc();
     idle = (struct task_struct*)addr_idle;
     idle->state = TASK_RUNNING;
     idle->counter = idle->priority = 0;
     idle->pid = 0;
+    idle->pgd = swapper_pg_dir; // page table for idle is the kernel root page
+    idle->thread.sscratch = 0;
 
     current = task[0] = idle;
 
-    // 1. 参考 idle 的设置, 为 task[1] ~ task[NR_TASKS - 1] 进行初始化
-    // 2. 其中每个线程的 state 为 TASK_RUNNING, counter 为 0, priority 使用 rand() 来设置, pid 为该线程在线程数组中的下标。
-    // 3. 为 task[1] ~ task[NR_TASKS - 1] 设置 `thread_struct` 中的 `ra` 和 `sp`,
-    // 4. 其中 `ra` 设置为 __dummy （见 4.3.2）的地址,  `sp` 设置为 该线程申请的物理页的高地址
-
-    /* YOUR CODE HERE */
-    for(int i = 1; i < NR_TASKS; i++){
-        uint64 task_addr = kalloc();
+    // for each user process
+    for(int i = 1; i < NR_TASKS; i++) {
+        uint64_t task_addr = kalloc();
         task[i] = (struct task_struct*)task_addr;
         task[i]->state = TASK_RUNNING;
         task[i]->counter = 0;
         task[i]->priority = rand() % 10 + 1;
         task[i]->pid = i;
-        task[i]->thread.ra = (uint64)__dummy;
-        task[i]->thread.sp = task_addr + 4096;
+
+        // copy the user code to a new page
+        uint64_t pg_num = ((uint64_t)(&uapp_end) - (uint64_t)(&uapp_start) - 1) / PGSIZE + 1; // compute # of pages for code
+        uint64_t uapp_new = alloc_pages(pg_num); // allocate new space for copied code
+        memcpy((void*)(uapp_new), (void*)(&uapp_start), pg_num * PGSIZE); // copy code
+        uint64_t u_stack_begin = alloc_page(); // allocate U-mode stack
+
+        // config page table
+        task[i]->pgd = (pagetable_t)alloc_page();
+        // copy the root page
+        copy_mapping(task[i]->pgd, (pagetable_t)(&swapper_pg_dir));
+        task[i]->pgd = (pagetable_t)VA2PA((uint64_t)task[i]->pgd);
+        // note the U bits for the following PTEs are set to 1
+        // mapping of user text segment
+        create_mapping((uint64*)PA2VA((uint64_t)task[i]->pgd), uapp_new, VA2PA(uapp_new), pg_num, 13);
+        // mapping of user stack segment
+        create_mapping((uint64*)PA2VA((uint64_t)task[i]->pgd), u_stack_begin, VA2PA(u_stack_begin), 1, 11);
+
+        // set CSRs
+        task[i]->thread.sepc = uapp_new; // set sepc
+        task[i]->thread.sstatus = (1 << 18) | (1 << 5); // set SPP = 0, SPIE = 1, SUM = 1
+        task[i]->thread.sscratch = u_stack_begin + PGSIZE; // U-mode stack end (initial sp)
+
+        task[i]->thread.ra = (uint64_t)__dummy;
+        task[i]->thread.sp = task_addr + PGSIZE; // initial kernel stack pointer
     }
 
     printk("...proc_init done!\n");
 }
 
 void dummy() {
-    uint64 MOD = 1000000007;
-    uint64 auto_inc_local_var = 0;
+    uint64_t MOD = 1000000007;
+    uint64_t auto_inc_local_var = 0;
     int last_counter = -1;
     while(1) {
         if (last_counter == -1 || current->counter != last_counter) {
@@ -84,7 +109,7 @@ void do_timer(void) {
 // #define DSJF
 #ifdef DSJF 
 void schedule(void){
-    uint64 min_count = INF;
+    uint64_t min_count = INF;
     struct task_struct* next = NULL;
     char all_zeros = 1;
     for(int i = 1; i < NR_TASKS; i++){
@@ -116,7 +141,7 @@ void schedule(void){
 
 #ifdef DPRIORITY
 void schedule(void){
-    uint64 c, i, next;
+    uint64_t c, i, next;
     struct task_struct** p;
 	while(1) {
 		c = 0;

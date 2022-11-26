@@ -3,8 +3,9 @@
     .globl _start
 _start:
     # la sp, boot_stack_top # set the stack pointer
-    lui sp, 0x40104
-    slli sp, sp, 1
+    li t0, 0xffffffdf80000000
+    la sp, boot_stack_top
+    sub sp, sp, t0
 
     jal ra, setup_vm # set up vitual memory (just a transition)
     jal ra, relocate
@@ -26,7 +27,8 @@ _start:
 
     # set on SIE bit and SPIE of sstatus
     csrr t0, sstatus
-    ori t0, t0, 0x22
+    # ori t0, t0, 0x22
+    ori t0, t0, 0x20  # don't set SIE: schedule() can be done at the beginning
     csrw sstatus, t0
 
     # set first time interrupt
@@ -43,18 +45,7 @@ relocate:
     ######################
 
     # calculate 0xffffffdf80000000 (PA2VA_OFFSET) in t0
-    # first turn t0 -> 0x80000000
-    addi t0, x0, 1
-    slli t0, t0, 31
-    # turn t1 -> 0xffffffdf00000000
-    lui t1, 0xfffff
-    # addi t1, t1, 0xfdf
-    addi t1, t1, 0x7ef
-    addi t1, t1, 0x7f0
-    slli t1, t1, 31
-    slli t1, t1, 1
-    # t0 = 0xffffffdf00000000 + 0x80000000
-    add t0, t0, t1
+    li t0, 0xffffffdf80000000
 
     add ra, ra, t0 # set ra = ra + PA2VA_OFFSET
     add sp, sp, t0 # set sp = sp + PA2VA_OFFSET
@@ -65,10 +56,7 @@ relocate:
     add t1, x0, t2
     srli t1, t1, 12
     # MODE field = 8
-    addi t0, x0, 8
-    slli t0, t0, 20
-    slli t0, t0, 20
-    slli t0, t0, 20
+    li t0, 0x8000000000000000
     or t1, t1, t0
     csrw satp, t1
 
@@ -78,6 +66,9 @@ relocate:
 
     # flush tlb
     sfence.vma zero, zero
+
+    # flush icache
+    fence.i
 
     ret
 
