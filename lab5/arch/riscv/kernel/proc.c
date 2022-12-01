@@ -29,11 +29,12 @@ static uint64_t load_elf_program(struct task_struct* task) {
         if (phdr->p_type == PT_LOAD) {
             // do mapping
             // compute # of pages for code
-            uint64_t pg_num = (phdr->p_memsz - 1) / PGSIZE + 1;
+            uint64_t pg_num = (PGOFFSET(phdr->p_vaddr) + phdr->p_memsz - 1) / PGSIZE + 1;
             uint64_t uapp_new = alloc_pages(pg_num); // allocate new space for copied code
             uint64_t load_addr = ((uint64_t)(&uapp_start) + phdr->p_offset);
-            memcpy((void*)(uapp_new), (void*)(load_addr), phdr->p_memsz); // copy code
-            create_mapping((uint64*)PA2VA((uint64_t)task->pgd), 0, VA2PA(uapp_new), pg_num, phdr->p_flags | 0x8);
+            memcpy((void*)(uapp_new + PGOFFSET(phdr->p_vaddr)), (void*)(load_addr), phdr->p_memsz); // copy code
+            // note we should open the U-bit switch
+            create_mapping((uint64*)PA2VA((uint64_t)task->pgd), PGROUNDDOWN(phdr->p_vaddr), VA2PA(uapp_new), pg_num, phdr->p_flags | 0x8);
         }
     }
 
@@ -45,7 +46,7 @@ static uint64_t load_elf_program(struct task_struct* task) {
     // set user stack
     task->thread_info.user_sp = USER_END;
     // pc for the user program
-    task->thread.sepc = 0; // ?
+    task->thread.sepc = ehdr->e_entry; // the program starting address
     // sstatus bits set
     task->thread.sstatus = (1 << 18) | (1 << 5);
     // user stack for user program

@@ -8,6 +8,7 @@
 #define PGSIZE 0x1000 // 4KB
 #define PGROUNDUP(addr) ((addr + PGSIZE - 1) & (~(PGSIZE - 1)))
 #define PGROUNDDOWN(addr) (addr & (~(PGSIZE - 1)))
+#define PGOFFSET(addr) ((addr) - PGROUNDDOWN(addr))
 
 #define OPENSBI_SIZE (0x200000)
 
