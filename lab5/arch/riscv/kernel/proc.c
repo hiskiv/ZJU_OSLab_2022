@@ -105,6 +105,7 @@ void task_init() {
         memcpy((void*)(task[i]->pgd), (void*)((&swapper_pg_dir)), PGSIZE);
         task[i]->pgd = (pagetable_t)VA2PA((uint64_t)task[i]->pgd); // turn physical address
         load_elf_program(task[i]);
+        // load_binary_program(task[i]);
 
         task[i]->thread.ra = (uint64_t)__dummy;
         task[i]->thread.sp = task_addr + PGSIZE; // initial kernel stack pointer
