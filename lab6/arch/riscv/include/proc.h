@@ -3,7 +3,7 @@
 #include "types.h"
 #include "stdint.h"
 
-#define NR_TASKS  (1 + 4) // 用于控制 最大线程数量 （idle 线程 + 31 内核线程）
+#define NR_TASKS  (1 + 15) // 用于控制 最大线程数量 （idle 线程 + 31 内核线程）
 
 #define TASK_RUNNING    0 // 为了简化实验, 所有的线程都只有一种状态
 
@@ -28,9 +28,8 @@ struct vm_area_struct {
     uint64_t file_offset_on_disk;
     uint64_t vm_content_offset_in_file;
     uint64_t vm_content_size_in_file;
+    char if_alloc; // whether this vm_area has part of memory allocated
 };
-
-// proc.h 
 
 struct thread_struct {
     uint64_t ra;

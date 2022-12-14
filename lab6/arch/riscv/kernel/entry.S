@@ -61,8 +61,10 @@ _umode_trap_1:
     csrr a1, sepc
     add a2, sp, x0  # pt_regs
     jal x1, trap_handler
+    .globl __ret_from_fork
+__ret_from_fork:
 
-    # 3. restore CSRs and 32 registers (x2(sp) should be restore last) from stack
+    # 3. restore CSRs and 31 registers (x2(sp) should be restore last) from stack
     ld t0, 256(sp)
     csrw sstatus, t0
     ld t0, 248(sp)
@@ -104,7 +106,7 @@ _umode_trap_1:
     ld x30, 232(sp)
     ld x31, 240(sp)
     ld x2, 8(sp)
-    addi sp, sp, 264
+    addi sp, sp, 288
 
     csrrw t0, sscratch, t0
     beq t0, x0, _smode_trap_2  # sscratch == 0: S-mode, don't need to switch stack

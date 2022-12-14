@@ -27,21 +27,14 @@ static uint64_t load_elf_program(struct task_struct* task) {
     for (int i = 0; i < phdr_cnt; i++) {
         phdr = (Elf64_Phdr*)(phdr_start + sizeof(Elf64_Phdr) * i);
         if (phdr->p_type == PT_LOAD) {
-            // do mapping
+            // initialize vma
             // compute # of pages for code
             uint64_t pg_num = (PGOFFSET(phdr->p_vaddr) + phdr->p_memsz - 1) / PGSIZE + 1;
-            // uint64_t uapp_new = alloc_pages(pg_num); // allocate new space for copied code
-            // uint64_t load_addr = ((uint64_t)(&uapp_start) + phdr->p_offset);
-            // memcpy((void*)(uapp_new + PGOFFSET(phdr->p_vaddr)), (void*)(load_addr), phdr->p_memsz); // copy code
-            // note we should open the U-bit switch
-            // create_mapping((uint64*)PA2VA((uint64_t)task->pgd), PGROUNDDOWN(phdr->p_vaddr), VA2PA(uapp_new), pg_num, phdr->p_flags | 0x8);
             do_mmap(task, phdr->p_vaddr, pg_num * PGSIZE, (phdr->p_flags << 1), (uint64_t)&uapp_start, phdr->p_offset, phdr->p_filesz);
         }
     }
 
-    // allocate user stack and do mapping
-    // uint64_t u_stack_begin = alloc_page(); // allocate U-mode stack
-    // create_mapping((uint64*)PA2VA((uint64_t)task->pgd), USER_END - PGSIZE, VA2PA(u_stack_begin), 1, 11);
+    // initialize vma for stack
     do_mmap(task, USER_END - PGSIZE, PGSIZE, VM_R_MASK | VM_W_MASK | VM_ANONYM, (uint64_t)&uapp_start, 0, 0);
 
     // following code has been written for you
@@ -73,13 +66,8 @@ static uint64_t load_binary_program(struct task_struct* task) {
 }
 
 void task_init() {
-    // 1. 调用 kalloc() 为 idle 分配一个物理页
-    // 2. 设置 state 为 TASK_RUNNING;
-    // 3. 由于 idle 不参与调度 可以将其 counter / priority 设置为 0
-    // 4. 设置 idle 的 pid 为 0
-    // 5. 将 current 和 task[0] 指向 idle
+    memset(task, 0, NR_TASKS * sizeof(task));
 
-    /* YOUR CODE HERE */
     uint64_t addr_idle = kalloc();
     idle = (struct task_struct*)addr_idle;
     idle->state = TASK_RUNNING;
@@ -90,26 +78,24 @@ void task_init() {
 
     current = task[0] = idle;
 
-    // for each user process
-    for(int i = 1; i < NR_TASKS; i++) {
-        uint64_t task_addr = kalloc();
-        task[i] = (struct task_struct*)task_addr;
-        task[i]->state = TASK_RUNNING;
-        task[i]->counter = 0;
-        task[i]->priority = rand() % 10 + 1;
-        task[i]->pid = i;
+    // only initialize one task
+    uint64_t task_addr = kalloc();
+    task[1] = (struct task_struct*)task_addr;
+    task[1]->state = TASK_RUNNING;
+    task[1]->counter = 0;
+    task[1]->priority = rand() % 10 + 1;
+    task[1]->pid = 1;
 
-        // config page table
-        task[i]->pgd = (pagetable_t)alloc_page();
-        // copy the root page
-        memcpy((void*)(task[i]->pgd), (void*)((&swapper_pg_dir)), PGSIZE);
-        task[i]->pgd = (pagetable_t)VA2PA((uint64_t)task[i]->pgd); // turn physical address
-        load_elf_program(task[i]);
-        // load_binary_program(task[i]);
+    // config page table
+    task[1]->pgd = (pagetable_t)alloc_page();
+    // copy the root page
+    memcpy((void*)(task[1]->pgd), (void*)((&swapper_pg_dir)), PGSIZE);
+    task[1]->pgd = (pagetable_t)VA2PA((uint64_t)task[1]->pgd); // turn physical address
+    load_elf_program(task[1]);
+    // load_binary_program(task[i]);
 
-        task[i]->thread.ra = (uint64_t)__dummy;
-        task[i]->thread.sp = task_addr + PGSIZE; // initial kernel stack pointer
-    }
+    task[1]->thread.ra = (uint64_t)__dummy;
+    task[1]->thread.sp = task_addr + PGSIZE; // initial kernel stack pointer
 
     printk("...proc_init done!\n");
 }
@@ -124,6 +110,7 @@ void do_mmap(struct task_struct *task, uint64_t addr, uint64_t length, uint64_t 
     vma->file_offset_on_disk = file_offset_on_disk;
     vma->vm_content_offset_in_file = vm_content_offset_in_file;
     vma->vm_content_size_in_file = vm_content_size_in_file;
+    vma->if_alloc = 0;
 }
 
 // find the VMA that contains the addr (null if not found)
@@ -165,6 +152,7 @@ void schedule(void){
     struct task_struct* next = NULL;
     char all_zeros = 1;
     for(int i = 1; i < NR_TASKS; i++){
+        if (task[i] == NULL) continue;
         if (task[i]->state == TASK_RUNNING && task[i]->counter > 0) {
             if (task[i]->counter < min_count) {
                 min_count = task[i]->counter;
@@ -177,6 +165,7 @@ void schedule(void){
     if (all_zeros) {
         printk("\n");
         for(int i = 1; i < NR_TASKS; i++){
+            if (task[i] == NULL) continue;
             task[i]->counter = rand() % 10 + 1;
             printk("SET [PID = %d COUNTER = %d]\n", task[i]->pid, task[i]->counter);
         }

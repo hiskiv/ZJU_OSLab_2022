@@ -116,3 +116,19 @@ void create_mapping(uint64 *pgtbl, uint64 va, uint64 pa, uint64 sz, int perm) {
         va += 0x1000, pa += 0x1000;
     }
 }
+
+// to check if virtual address addr has physical mapping in pgd
+int has_mapping(pagetable_t pgd, uint64_t addr) {
+    uint64_t vpn2 = ((addr & 0x7fc0000000) >> 30);
+    uint64_t vpn1 = ((addr & 0x3fe00000) >> 21);
+    uint64_t vpn0 = ((addr & 0x1ff000) >> 12);
+
+    if (!(pgd[vpn2] & 1)) return 0;
+    pagetable_t pgtbl1 = (pagetable_t)(PA2VA_OFFSET + ((pgd[vpn2] & 0x3ffffffffffffc00) << 2));
+
+    if (!(pgtbl1[vpn1] & 1)) return 0;
+    pagetable_t pgtbl0 = (pagetable_t)(PA2VA_OFFSET + ((pgtbl1[vpn1] & 0x3ffffffffffffc00) << 2));
+    
+    if (pgtbl0[vpn0] & 1) return 1;
+    else return 0;
+}

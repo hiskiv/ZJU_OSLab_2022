@@ -30,6 +30,8 @@ void do_page_fault(struct pt_regs *regs) {
             memcpy((void*)(page), (void*)(load_addr) + regs->stval - vma->vm_start, MIN(PGSIZE, vma->vm_end - regs->stval));
         }
     }
+
+    vma->if_alloc = 1;
 }
 
 
@@ -51,24 +53,25 @@ void trap_handler(uint64 scause, uint64 sepc, struct pt_regs *regs) {
     else { // it's exception
         switch (scause) {
         case ECALL_FROM_UMODE: // it's environmental call from U-mode
-            switch (regs->reg[16]) { // x17: ecall number, x9: a0 (return value)
+            switch (regs->reg[16]) { // x17: ecall number, x10: a0 (return value)
             case SYS_WRITE:
                 regs->reg[9] = sys_write(regs->reg[9], (const char*)regs->reg[10], regs->reg[11]);
                 break;
             case SYS_GETPID:
                 regs->reg[9] = sys_getpid();
                 break;
+            case SYS_CLONE:
+                regs->reg[9] = sys_clone(regs);
+                break;
             }
             regs->sepc += 4; // return to the next inst after ecall
             catch = 1;
             break;
-        case INSTRUCTION_PAGE_FAULT:
+        case INSTRUCTION_PAGE_FAULT: // demand paging
         case LOAD_PAGE_FAULT:
         case STORE_AMO_PAGE_FAULT:
             do_page_fault(regs);
             catch = 1;
-            break;
-        default:
             break;
         }
     }
