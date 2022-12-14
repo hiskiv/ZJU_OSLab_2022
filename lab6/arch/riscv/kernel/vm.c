@@ -5,6 +5,7 @@
 #include "mm.h"
 #include "string.h"
 #include "printk.h"
+#include "proc.h"
 
 /* early_pgtbl: 用于 setup_vm 进行 1GB 的 映射。 */
 unsigned long early_pgtbl[512] __attribute__((__aligned__(0x1000)));
@@ -37,14 +38,16 @@ void setup_vm_final(void) {
 
     // No OpenSBI mapping required
     // mapping kernel text X|-|R|V
-    create_mapping((uint64*)swapper_pg_dir, (uint64)&_stext, (uint64)(&_stext) - PA2VA_OFFSET, ((uint64)(&_srodata) - (uint64)(&_stext)) / PGSIZE, 5);
+    create_mapping((uint64*)swapper_pg_dir, (uint64)&_stext, (uint64)(&_stext) - PA2VA_OFFSET,
+        ((uint64)(&_srodata) - (uint64)(&_stext)) / PGSIZE, PTE_X_MASK | PTE_R_MASK | PTE_V_MASK);
 
     // mapping kernel rodata -|-|R|V
-    create_mapping((uint64*)swapper_pg_dir, (uint64)&_srodata, (uint64)(&_srodata) - PA2VA_OFFSET, ((uint64)(&_sdata) - (uint64)(&_srodata)) / PGSIZE, 1);
+    create_mapping((uint64*)swapper_pg_dir, (uint64)&_srodata, (uint64)(&_srodata) - PA2VA_OFFSET,
+        ((uint64)(&_sdata) - (uint64)(&_srodata)) / PGSIZE, PTE_R_MASK | PTE_V_MASK);
 
     // mapping other memory -|W|R|V
-    create_mapping((uint64*)swapper_pg_dir, (uint64)&_sdata, (uint64)(&_sdata) - PA2VA_OFFSET, (PHY_END + PA2VA_OFFSET - (uint64)(&_sdata)) / PGSIZE, 3);
-    // create_mapping((uint64*)swapper_pg_dir, (uint64)&_sdata, (uint64)(&_sdata) - PA2VA_OFFSET, 16000U, 3);
+    create_mapping((uint64*)swapper_pg_dir, (uint64)&_sdata, (uint64)(&_sdata) - PA2VA_OFFSET,
+        (PHY_END + PA2VA_OFFSET - (uint64)(&_sdata)) / PGSIZE, PTE_W_MASK | PTE_R_MASK | PTE_V_MASK);
     
     // verify();
 
@@ -107,24 +110,9 @@ void create_mapping(uint64 *pgtbl, uint64 va, uint64 pa, uint64 sz, int perm) {
         else pgtbl0 = (uint64*)(PA2VA_OFFSET + ((pgtbl1[vpn1] & 0x3ffffffffffffc00) << 2));
 
         // the physical page
-        // note the perm only contains infomation about UXWR (no V)
-        pgtbl0[vpn0] = (1 | (perm << 1) | (pa >> 2));
+        // note the perm contains all bits (UXWRV)
+        pgtbl0[vpn0] = (perm | (pa >> 2));
 
         va += 0x1000, pa += 0x1000;
-    }
-}
-
-void copy_mapping(pagetable_t pgtbl_dst, pagetable_t pgtbl_src) {
-    for (int i = 0; i < 512; i++) {
-        if ((pgtbl_src[i] & 1)) {
-            if (!(pgtbl_src[i] & 0xe)) {
-                uint64* sub_pg = (uint64*)kalloc();
-                pgtbl_dst[i] = (1 | (((uint64)sub_pg - 0xffffffdf80000000) >> 2));
-                copy_mapping((pagetable_t)sub_pg, (pagetable_t)(PA2VA_OFFSET + ((pgtbl_src[i] & 0x3ffffffffffffc00) << 2)));
-            }
-            else {
-                pgtbl_dst[i] = pgtbl_src[i]; // actual physical page
-            }
-        }
     }
 }

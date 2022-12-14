@@ -30,21 +30,21 @@ static uint64_t load_elf_program(struct task_struct* task) {
             // do mapping
             // compute # of pages for code
             uint64_t pg_num = (PGOFFSET(phdr->p_vaddr) + phdr->p_memsz - 1) / PGSIZE + 1;
-            uint64_t uapp_new = alloc_pages(pg_num); // allocate new space for copied code
-            uint64_t load_addr = ((uint64_t)(&uapp_start) + phdr->p_offset);
-            memcpy((void*)(uapp_new + PGOFFSET(phdr->p_vaddr)), (void*)(load_addr), phdr->p_memsz); // copy code
+            // uint64_t uapp_new = alloc_pages(pg_num); // allocate new space for copied code
+            // uint64_t load_addr = ((uint64_t)(&uapp_start) + phdr->p_offset);
+            // memcpy((void*)(uapp_new + PGOFFSET(phdr->p_vaddr)), (void*)(load_addr), phdr->p_memsz); // copy code
             // note we should open the U-bit switch
-            create_mapping((uint64*)PA2VA((uint64_t)task->pgd), PGROUNDDOWN(phdr->p_vaddr), VA2PA(uapp_new), pg_num, phdr->p_flags | 0x8);
+            // create_mapping((uint64*)PA2VA((uint64_t)task->pgd), PGROUNDDOWN(phdr->p_vaddr), VA2PA(uapp_new), pg_num, phdr->p_flags | 0x8);
+            do_mmap(task, phdr->p_vaddr, pg_num * PGSIZE, (phdr->p_flags << 1), (uint64_t)&uapp_start, phdr->p_offset, phdr->p_filesz);
         }
     }
 
     // allocate user stack and do mapping
-    uint64_t u_stack_begin = alloc_page(); // allocate U-mode stack
-    create_mapping((uint64*)PA2VA((uint64_t)task->pgd), USER_END - PGSIZE, VA2PA(u_stack_begin), 1, 11);
+    // uint64_t u_stack_begin = alloc_page(); // allocate U-mode stack
+    // create_mapping((uint64*)PA2VA((uint64_t)task->pgd), USER_END - PGSIZE, VA2PA(u_stack_begin), 1, 11);
+    do_mmap(task, USER_END - PGSIZE, PGSIZE, VM_R_MASK | VM_W_MASK | VM_ANONYM, (uint64_t)&uapp_start, 0, 0);
 
     // following code has been written for you
-    // set user stack
-    task->thread_info.user_sp = USER_END;
     // pc for the user program
     task->thread.sepc = ehdr->e_entry; // the program starting address
     // sstatus bits set
@@ -62,9 +62,9 @@ static uint64_t load_binary_program(struct task_struct* task) {
 
     // note the U bits for the following PTEs are set to 1
     // mapping of user text segment
-    create_mapping((uint64*)PA2VA((uint64_t)task->pgd), 0, VA2PA(uapp_new), pg_num, 15);
+    create_mapping((uint64*)PA2VA((uint64_t)task->pgd), 0, VA2PA(uapp_new), pg_num, 31);
     // mapping of user stack segment
-    create_mapping((uint64*)PA2VA((uint64_t)task->pgd), USER_END - PGSIZE, VA2PA(u_stack_begin), 1, 11);
+    create_mapping((uint64*)PA2VA((uint64_t)task->pgd), USER_END - PGSIZE, VA2PA(u_stack_begin), 1, 23);
 
     // set CSRs
     task->thread.sepc = 0; // set sepc at user space
@@ -113,6 +113,29 @@ void task_init() {
 
     printk("...proc_init done!\n");
 }
+
+
+void do_mmap(struct task_struct *task, uint64_t addr, uint64_t length, uint64_t flags,
+    uint64_t file_offset_on_disk, uint64_t vm_content_offset_in_file, uint64_t vm_content_size_in_file) {
+    struct vm_area_struct* vma = &(task->vmas[task->vma_cnt++]);
+    vma->vm_start = addr;
+    vma->vm_end = addr + length;
+    vma->vm_flags = flags;
+    vma->file_offset_on_disk = file_offset_on_disk;
+    vma->vm_content_offset_in_file = vm_content_offset_in_file;
+    vma->vm_content_size_in_file = vm_content_size_in_file;
+}
+
+// find the VMA that contains the addr (null if not found)
+struct vm_area_struct *find_vma(struct task_struct *task, uint64_t addr) {
+    for (int i = 0; i < task->vma_cnt; i++) {
+        if (task->vmas[i].vm_start <= addr && addr < task->vmas[i].vm_end) {
+            return &(task->vmas[i]);
+        }
+    }
+    return NULL;
+}
+
 
 extern void __switch_to(struct task_struct* prev, struct task_struct* next);
 

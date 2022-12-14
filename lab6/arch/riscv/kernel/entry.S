@@ -2,24 +2,18 @@
     .align 2
     .globl _traps 
 _traps:
-    # preserve t0 and t1 because we'll use them
-    # store them in U-mode stack (maybe S-mode stack if trapped from S-mode)
-    addi sp, sp, -16
-    sd t0, 0(sp)
-    sd t1, 8(sp)
-
     # first check it's U-mode or S-mode before trap
-    csrr t0, sstatus
-    andi t0, t0, 0x100 # take SPP bit
-    addi t1, x0, 0
-    bne t0, t1, _smode_trap_1  # SPP != 0: S-mode, don't need to switch stack
-    csrr t1, sscratch  # switch stack pointers for U mode and S mode
-    csrw sscratch, sp
-    add sp, t1, x0
+    csrrw t0, sscratch, t0
+    beq t0, x0, _smode_trap_1  # sscratch == 0: S-mode, don't need to switch stack
+    csrrw t0, sscratch, t0
+    csrrw sp, sscratch, sp  # switch stack pointers for U mode and S mode
+    jal x0, _umode_trap_1
 _smode_trap_1:
+    csrrw t0, sscratch, t0
+_umode_trap_1:
 
-    # 1. save 31 registers and sepc, sstatus to S-mode stack
-    addi sp, sp, -264
+    # 1. save 31 registers and five CSRs to S-mode stack
+    addi sp, sp, -288
     sd x1, 0(sp)
     sd x2, 8(sp)
     sd x3, 16(sp)
@@ -55,6 +49,12 @@ _smode_trap_1:
     sd t0, 248(sp)
     csrr t0, sstatus
     sd t0, 256(sp)
+    csrr t0, stval
+    sd t0, 264(sp)
+    csrr t0, sscratch
+    sd t0, 272(sp)
+    csrr t0, scause
+    sd t0, 280(sp)
 
     # 2. call trap_handler
     csrr a0, scause # check which are the argument registers
@@ -62,11 +62,17 @@ _smode_trap_1:
     add a2, sp, x0  # pt_regs
     jal x1, trap_handler
 
-    # 3. restore sepc and 32 registers (x2(sp) should be restore last) from stack
+    # 3. restore CSRs and 32 registers (x2(sp) should be restore last) from stack
     ld t0, 256(sp)
     csrw sstatus, t0
     ld t0, 248(sp)
     csrw sepc, t0
+    ld t0, 264(sp)
+    csrw stval, t0
+    ld t0, 272(sp)
+    csrw sscratch, t0
+    ld t0, 280(sp)
+    csrw scause, t0
     ld x1, 0(sp)
     ld x3, 16(sp)
     ld x4, 24(sp)
@@ -100,22 +106,16 @@ _smode_trap_1:
     ld x2, 8(sp)
     addi sp, sp, 264
 
-    # resume original stack pointer (if trapped from U mode)
-    csrr t0, sstatus
-    andi t0, t0, 0x100 # take SPP bit
-    addi t1, x0, 0
-    bne t0, t1, _smode_trap_2  # SPP != 0: S-mode, don't need to switch stack
-    csrr t1, sscratch  # switch stack pointers for U mode and S mode
-    csrw sscratch, sp
-    add sp, t1, x0
+    csrrw t0, sscratch, t0
+    beq t0, x0, _smode_trap_2  # sscratch == 0: S-mode, don't need to switch stack
+    csrrw t0, sscratch, t0
+    csrrw sp, sscratch, sp  # switch stack pointers for U mode and S mode
+    jal x0, _umode_trap_2
 _smode_trap_2:
+    csrrw t0, sscratch, t0
 
-    # restore t0 and t1
-    ld t0, 0(sp)
-    ld t1, 8(sp)
-    addi sp, sp, 16
-    
     # 4. return from trap
+_umode_trap_2:
     sret
 
     .extern dummy
@@ -130,7 +130,7 @@ __dummy:
 __switch_to:
     # save state to prev process
     # including ra, sp, s0-s11
-    add t0, a0, 48  # offset of thread_struct in current task_struct
+    add t0, a0, 32  # offset of thread_struct in current task_struct
     sd ra, 0(t0)
     sd sp, 8(t0)
     sd s0, 16(t0)
@@ -153,7 +153,7 @@ __switch_to:
     sd t1, 128(t0)
 
     # restore state from next process
-    add t0, a1, 48  # offset of thread_struct in next task_struct
+    add t0, a1, 32  # offset of thread_struct in next task_struct
     ld ra, 0(t0)
     ld sp, 8(t0)
     ld s0, 16(t0)

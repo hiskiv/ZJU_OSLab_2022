@@ -27,6 +27,17 @@
 
 #define STDOUT 1
 
+// interrupt numbers
+#define TIMER_INT 0x5
+
+// exception numbers
+#define ECALL_FROM_UMODE 0x8
+#define INSTRUCTION_PAGE_FAULT 0xc
+#define LOAD_PAGE_FAULT 0xd
+#define STORE_AMO_PAGE_FAULT 0xf
+
+#define MIN(x, y) ((x) < (y) ? (x) : (y))
+
 #include "types.h"
 
 #define csr_read(csr)                       \
