@@ -6,7 +6,7 @@
 extern void test();
 
 int start_kernel() {
-    printk("[S Mode] Hello RISC-V\n");
+    printk("[S] 2022 Hello RISC-V\n");
     schedule();
     test(); // DO NOT DELETE !!!
 

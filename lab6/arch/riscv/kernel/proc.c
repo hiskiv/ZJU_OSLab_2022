@@ -167,13 +167,13 @@ void schedule(void){
         for(int i = 1; i < NR_TASKS; i++){
             if (task[i] == NULL) continue;
             task[i]->counter = rand() % 10 + 1;
-            printk("SET [PID = %d COUNTER = %d]\n", task[i]->pid, task[i]->counter);
+            printk("[S] SET [PID = %d COUNTER = %d]\n", task[i]->pid, task[i]->counter);
         }
         schedule();
     }
     else {
         if (next) {
-            printk("\nswitch to [PID = %d COUNTER = %d]\n", next->pid, next->counter);
+            printk("\n[S] switch to [PID = %d COUNTER = %d]\n", next->pid, next->counter);
             switch_to(next);
         }
     }

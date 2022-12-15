@@ -11,10 +11,11 @@
 extern struct task_struct* current;
 
 void do_page_fault(struct pt_regs *regs) {
+    printk("[S] Supervisor Page Fault, scause: %lx, stval: %lx\n", regs->scause, regs->stval);
     struct vm_area_struct* vma = find_vma(current, regs->stval);
 
     if (!vma) {
-        // do sth.
+        printk("Invalid address accessed.");
         return;
     }
 
